@@ -9,9 +9,11 @@ _Static_assert(POLICY_OBS <= MLP_MAX_OBS && POLICY_ACT <= MLP_MAX_ACT, "policy m
 
 const int mlp_n_obs = POLICY_OBS;
 const int mlp_n_act = POLICY_ACT;
+const char mlp_env[] = POLICY_ENV;
 
 static float h0[POLICY_HIDDEN];
 static float h1[POLICY_HIDDEN];
+static float out[POLICY_OUT];
 
 void mlp_forward(const float *obs, float *act)
 {
@@ -25,9 +27,17 @@ void mlp_forward(const float *obs, float *act)
         for (int j = 0; j < POLICY_HIDDEN; j++) s += policy_w1[i][j] * h0[j];
         h1[i] = s > 0.0f ? s : 0.0f;
     }
-    for (int i = 0; i < POLICY_ACT; i++) {
-        float mu = policy_b2[i];
-        for (int j = 0; j < POLICY_HIDDEN; j++) mu += policy_w2[i][j] * h1[j];
-        act[i] = tanhf(mu) * POLICY_ACTION_SCALE;
+    for (int i = 0; i < POLICY_OUT; i++) {
+        float s = policy_b2[i];
+        for (int j = 0; j < POLICY_HIDDEN; j++) s += policy_w2[i][j] * h1[j];
+        out[i] = s;
     }
+#if POLICY_DISCRETE
+    int best = 0; /* argmax Q; strict > keeps the first maximum, like torch.argmax */
+    for (int i = 1; i < POLICY_OUT; i++)
+        if (out[i] > out[best]) best = i;
+    act[0] = (float)best;
+#else
+    for (int i = 0; i < POLICY_ACT; i++) act[i] = tanhf(out[i]) * POLICY_ACTION_SCALE;
+#endif
 }

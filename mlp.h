@@ -7,6 +7,8 @@
 /* Observations / actions of the exported policy (POLICY_OBS / POLICY_ACT), for code without policy_weights.h. */
 extern const int mlp_n_obs;
 extern const int mlp_n_act;
+extern const char mlp_env[]; /* POLICY_ENV: which env the policy was exported for */
 
-/* obs = mlp_n_obs floats in the env's order; writes the mlp_n_act deterministic actions tanh(mu) * POLICY_ACTION_SCALE. */
+/* obs = mlp_n_obs floats in the env's order. Writes mlp_n_act floats: the deterministic actions
+ * tanh(mu) * POLICY_ACTION_SCALE (SAC), or the argmax-Q action index (DQN, mlp_n_act = 1). */
 void mlp_forward(const float *obs, float *act);

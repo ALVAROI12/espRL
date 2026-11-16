@@ -23,6 +23,11 @@ def reward(state, action: float) -> float:
     return float(np.cos(state[2]) - W_X * state[0] ** 2 - W_U * u * u)
 
 
+def step_reward(state, action: float, terminated: bool) -> float:
+    """Reward of one step as the env gives it; terminated = the cart left the track."""
+    return OUT_OF_TRACK if terminated else reward(state, action)
+
+
 def obs_of(state) -> np.ndarray:
     x, xd, th, thd = state
     return np.array([x, xd, np.cos(th), np.sin(th), thd], dtype=np.float32)

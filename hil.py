@@ -13,10 +13,10 @@ import sys
 import time
 
 import numpy as np
-from stable_baselines3 import SAC
+from stable_baselines3.common.base_class import BaseAlgorithm
 
 import train
-from export import header_env, reference_action
+from export import header_env, policy_n_act, reference_action
 from link import Link
 
 CPU_MHZ = 240
@@ -37,7 +37,7 @@ def ready(name: str) -> bool:
     return True
 
 
-def run(link: Link, model: SAC, name: str, episodes: int = 10, seed: int = 0) -> dict:
+def run(link: Link, model: BaseAlgorithm, name: str, episodes: int = 10, seed: int = 0) -> dict:
     env = train.make_env(name)
     diffs, cycles, rtts, lost = [], [], [], [0]
 
@@ -87,8 +87,8 @@ def main() -> int:
     if not ready(name):
         return 2
     episodes = int(sys.argv[3]) if len(sys.argv) > 3 else 10
-    model = SAC.load(train.model_path(name))
-    link = Link(port, n_act=model.action_space.shape[0])
+    model = train.load(name)
+    link = Link(port, n_act=policy_n_act(model))
     try:
         rep = run(link, model, name, episodes)
     finally:

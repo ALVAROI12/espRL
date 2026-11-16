@@ -18,5 +18,6 @@ USB (hardware-in-the-loop). Split out of the ESP-FC Next drone repo (`~/Projects
 - `make train` - train + export `firmware/main/policy_weights.h` (fails under the return gate)
 - `make fw` / `make flash [PORT=...]` - build in the IDF container, flash from the host with `uvx esptool`
 - `make hil` / `make viz` - run episodes on the board; live visualizer (`VIZ_ARGS="--save out/hil.gif"` records)
-- `ENV=pendulum|cartpole_balance|cartpole_swingup|lunarlander` on train/hil/onchip/viz; the flashed header must match `ENV`
-- `make onchip ENV=cartpole_*` - physics + policy on the chip at 50 Hz (`VIZ_ARGS=--onchip` to watch)
+- `ENV=pendulum|cartpole_balance|cartpole_swingup|lunarlander|acrobot` on train/hil/onchip/viz; the flashed header must match `ENV`
+- `make onchip ENV=cartpole_*|acrobot` - physics + policy on the chip in real time (`VIZ_ARGS=--onchip` to watch);
+  a new on-chip env needs a C port in its project folder, a `SIMS` row in `firmware/main/main.c` and `sim=` in `train.ENVS`
