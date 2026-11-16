@@ -27,7 +27,7 @@ UPRIGHT_COS, UPRIGHT_STEPS = 0.95, 100  # cart-pole success: cos th > 0.95 on ea
 # steps: default SAC timesteps; cos: index of cos th in the observation.
 ENVS = {
     "pendulum": dict(id="Pendulum-v1", kwargs={}, steps=20_000, cos=0),
-    "cartpole_balance": dict(id="espRL/CartPole-v0", kwargs={"mode": "balance"}, steps=30_000, cos=2),
+    "cartpole_balance": dict(id="espRL/CartPole-v0", kwargs={"mode": "balance"}, steps=60_000, cos=2),
     "cartpole_swingup": dict(id="espRL/CartPole-v0", kwargs={"mode": "swingup"}, steps=200_000, cos=2),
 }
 
