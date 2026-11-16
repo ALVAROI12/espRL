@@ -1,6 +1,6 @@
 """Host side of the HIL serial protocol (docs/superpowers/specs/2026-11-16-esp32-rl-hil-design.md).
 
-Request 14 B: 0xA5, seq u8, 3 x f32 obs. Reply 10 B: 0x5A, seq u8, f32 action, u32 inference cycles.
+Request: 0xA5, seq u8, POLICY_OBS x f32 obs (14 B pendulum, 22 B cart-pole). Reply 10 B: 0x5A, seq u8, f32 action, u32 inference cycles.
 """
 
 from __future__ import annotations
@@ -32,7 +32,7 @@ class Link:
         self.seq = (self.seq + 1) & 0xFF
         o = np.asarray(obs, dtype=np.float32)
         try:
-            self.ser.write(struct.pack("<BB3f", REQ, seq, *o))
+            self.ser.write(struct.pack(f"<BB{o.size}f", REQ, seq, *o))
         except serial.SerialTimeoutException:
             return None
         deadline = time.monotonic() + self.timeout

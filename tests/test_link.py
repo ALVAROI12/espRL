@@ -88,3 +88,11 @@ def test_write_timeout_returns_none():
         raise serial.SerialTimeoutException("Write timeout")
     fake.write = stuck
     assert link.act(np.zeros(3)) is None
+
+
+def test_request_bytes_cartpole():
+    link, fake = make()
+    fake.rx += reply(0, 0.0, 0)
+    obs = np.array([0.1, -0.2, 1.0, 0.0, 0.5])
+    link.act(obs)
+    assert bytes(fake.tx) == struct.pack("<BB5f", 0xA5, 0, *obs) and len(fake.tx) == 22

@@ -31,10 +31,10 @@ void app_main(void)
     for (;;) {
         uint8_t b;
         if (usb_serial_jtag_read_bytes(&b, 1, portMAX_DELAY) != 1 || b != REQ) continue;
-        uint8_t req[13]; /* seq + 3 x f32 */
-        if (!read_exact(req, sizeof req)) continue;
-        float obs[3];
-        memcpy(obs, req + 1, sizeof obs);
+        uint8_t req[1 + 4 * MLP_MAX_OBS]; /* seq + mlp_n_obs x f32 */
+        if (!read_exact(req, 1 + 4 * mlp_n_obs)) continue;
+        float obs[MLP_MAX_OBS];
+        memcpy(obs, req + 1, 4 * mlp_n_obs);
 
         uint32_t t0 = esp_cpu_get_cycle_count();
         float action = mlp_forward(obs);
