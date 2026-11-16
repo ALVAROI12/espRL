@@ -1,4 +1,4 @@
-"""rl/mlp.c (the code that runs on the ESP32) must match the SB3 torch actor it was exported from."""
+"""mlp.c (the code that runs on the ESP32) must match the SB3 torch actor it was exported from."""
 
 import ctypes
 import subprocess

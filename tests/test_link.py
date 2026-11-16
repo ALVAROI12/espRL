@@ -1,4 +1,4 @@
-"""Host side of the HIL serial protocol (rl/link.py) against a fake port."""
+"""Host side of the HIL serial protocol (link.py) against a fake port."""
 
 import struct
 import time

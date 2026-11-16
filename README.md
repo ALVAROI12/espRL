@@ -1,22 +1,22 @@
-# RL on the ESP32 (hardware-in-the-loop)
+# espRL: RL on the ESP32 (hardware-in-the-loop)
 
 A SAC policy for Gymnasium `Pendulum-v1` is trained on the Mac and runs as plain C (`mlp.c`) on an
 Arduino Nano ESP32 (ESP32-S3). The Mac steps the pendulum and gets every action from the board over USB.
 Design: `docs/superpowers/specs/2026-11-16-esp32-rl-hil-design.md`.
 
 ```
-make rl-setup            # rl/.venv (torch, SB3, gymnasium); kept apart from sim/.venv
-make rl-test             # host tests: C forward pass vs torch, serial protocol
-make rl-train            # ~25 s on an M-series Mac; writes rl/out/sac_pendulum.zip + firmware/main/policy_weights.h
+make setup               # .venv (torch, SB3, gymnasium)
+make test                # host tests: C forward pass vs torch, serial protocol
+make train               # ~25 s on an M-series Mac; writes out/sac_pendulum.zip + firmware/main/policy_weights.h
 colima start             # Docker for ESP-IDF
-make rl-fw               # rl/firmware/build-esp32s3
-make rl-flash [PORT=...] # default PORT = first /dev/cu.usbmodem*
-make rl-hil [PORT=...]   # 10 episodes on the board; report in rl/out/hil_report.json
-make rl-viz [PORT=...]   # live window: pendulum + chip/torch torque, inference us, USB round trip
-make rl-viz VIZ_ARGS="--save out/hil.gif"   # record one episode instead
+make fw                  # firmware/build-esp32s3
+make flash [PORT=...]    # default PORT = first /dev/cu.usbmodem*
+make hil [PORT=...]      # 10 episodes on the board; report in out/hil_report.json
+make viz [PORT=...]      # live window: pendulum + chip/torch torque, inference us, USB round trip
+make viz VIZ_ARGS="--save out/hil.gif"   # record one episode instead
 ```
 
-`rl-train` and `rl-fw` go together: the board must run the header from the same model `rl-hil` loads, or the
+`make train` and `make fw` go together: the board must run the header from the same model `make hil` loads, or the
 action-difference gate fails.
 
 ## Results (2026-11-16, Arduino Nano ESP32, ESP32-S3 rev v0.2 at 240 MHz)
@@ -35,9 +35,9 @@ Policy: SAC, 20k steps, seed 0. Inference is with `mlp.c` at `-O2`; at the IDF d
 ## Board notes
 
 - The first flash over the Arduino bootloader fails once with "Device not configured": the board then
-  re-enumerates as the ROM's USB-Serial/JTAG (303A:1001) and the next `make rl-flash` works. Hold B1 to GND
+  re-enumerates as the ROM's USB-Serial/JTAG (303A:1001) and the next `make flash` works. Hold B1 to GND
   and reset if it never does. The Arduino sketch is gone after flashing; the Arduino IDE can restore it.
-- `rl-flash` uses `--before usb-reset` and retries once: the default reset fails about every other time
+- `make flash` uses `--before usb-reset` and retries once: the default reset fails about every other time
   while the app runs.
 - Only `main.c` and `mlp.c` are built `-O2`. With the whole image at `-O2`
   (`CONFIG_COMPILER_OPTIMIZATION_PERF`) the board answered one request per port open and then went silent;

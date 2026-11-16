@@ -1,4 +1,4 @@
-"""Train SAC on Pendulum-v1, save rl/out/sac_pendulum.zip and export firmware/main/policy_weights.h.
+"""Train SAC on Pendulum-v1, save out/sac_pendulum.zip and export firmware/main/policy_weights.h.
 
 Usage: python train.py [timesteps]   (exit 1 if the deterministic mean return over 10 episodes is <= -250)
 """

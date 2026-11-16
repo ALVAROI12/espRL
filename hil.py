@@ -70,7 +70,7 @@ def main() -> int:
         print("usage: hil.py PORT [episodes]", file=sys.stderr)
         return 2
     if not MODEL.exists():
-        print(f"{MODEL} missing: run `make rl-train` (it also rewrites firmware/main/policy_weights.h)", file=sys.stderr)
+        print(f"{MODEL} missing: run `make train` (it also rewrites firmware/main/policy_weights.h)", file=sys.stderr)
         return 2
     episodes = int(sys.argv[2]) if len(sys.argv) > 2 else 10
     model = SAC.load(MODEL)
