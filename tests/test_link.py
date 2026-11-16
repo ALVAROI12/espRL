@@ -1,22 +1,27 @@
 """Host side of the HIL serial protocol (rl/link.py) against a fake port."""
 
 import struct
+import time
 
 import numpy as np
+import serial
 
 from link import Link
 
 
 class FakeSerial:
-    def __init__(self):
+    def __init__(self, read_timeout=0.0):
         self.rx = bytearray()   # bytes the "board" will send
         self.tx = bytearray()   # bytes the host wrote
+        self.read_timeout = read_timeout  # like pyserial: read(n) waits this long when fewer than n bytes are ready
 
     def write(self, data):
         self.tx += data
         return len(data)
 
     def read(self, n):
+        if len(self.rx) < n:
+            time.sleep(self.read_timeout)
         out, self.rx = bytes(self.rx[:n]), self.rx[n:]
         return out
 
@@ -65,3 +70,21 @@ def test_request_bytes():
     fake.rx += reply(0, 0.0, 0)
     link.act(np.array([1.0, 0.0, 0.0]))
     assert bytes(fake.tx) == struct.pack("<BB3f", 0xA5, 0, 1.0, 0.0, 0.0)
+
+
+def test_reply_does_not_wait_for_read_timeout():
+    fake = FakeSerial(read_timeout=0.005)
+    link = Link("fake", timeout=0.1, serial_obj=fake)
+    fake.rx += reply(0, 0.5, 1)
+    t0 = time.perf_counter()
+    assert link.act(np.zeros(3)) == (0.5, 1)
+    assert time.perf_counter() - t0 < 0.003  # a full 10-byte reply is ready: no 5 ms read timeout in the RTT
+
+
+def test_write_timeout_returns_none():
+    link, fake = make()
+
+    def stuck(_):
+        raise serial.SerialTimeoutException("Write timeout")
+    fake.write = stuck
+    assert link.act(np.zeros(3)) is None

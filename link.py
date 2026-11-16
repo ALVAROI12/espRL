@@ -9,6 +9,7 @@ import struct
 import time
 
 import numpy as np
+import serial
 
 REQ, REP = 0xA5, 0x5A
 REPLY_SIZE = 10
@@ -17,8 +18,8 @@ REPLY_SIZE = 10
 class Link:
     def __init__(self, port: str, timeout: float = 0.1, serial_obj=None):
         if serial_obj is None:
-            import serial
-            serial_obj = serial.Serial(port, 115200, timeout=0.005)  # baud is ignored by USB-Serial/JTAG
+            # Baud is ignored by USB-Serial/JTAG. write_timeout: a wedged board that stops draining must not hang us.
+            serial_obj = serial.Serial(port, 115200, timeout=0.005, write_timeout=timeout)
         self.ser = serial_obj
         self.timeout = timeout
         self.seq = 0
@@ -30,7 +31,10 @@ class Link:
         seq = self.seq
         self.seq = (self.seq + 1) & 0xFF
         o = np.asarray(obs, dtype=np.float32)
-        self.ser.write(struct.pack("<BB3f", REQ, seq, *o))
+        try:
+            self.ser.write(struct.pack("<BB3f", REQ, seq, *o))
+        except serial.SerialTimeoutException:
+            return None
         deadline = time.monotonic() + self.timeout
         while True:
             i = self.buf.find(REP)
@@ -45,7 +49,8 @@ class Link:
                 continue
             if time.monotonic() > deadline:
                 return None
-            self.buf += self.ser.read(64)
+            # Ask for exactly the missing bytes: pyserial's read(n) waits out its timeout until n bytes arrive.
+            self.buf += self.ser.read(REPLY_SIZE if i < 0 else i + REPLY_SIZE - len(self.buf))
 
     def close(self) -> None:
         self.ser.close()

@@ -28,7 +28,7 @@ action-difference gate fails.
 | Mean return, Python alone, same seeds | -131.6 | reported |
 | Max abs action difference chip vs torch | 1.85e-6 | < 1e-4 |
 | Inference, 3-64-64-1 float MLP | 99.0 us p50, 99.3 us p99 (23.8k cycles) | reported |
-| USB round trip | 6.24 ms p50, 6.33 ms p99 | reported |
+| USB round trip | 0.22 ms p50, 0.29 ms p99 | reported |
 
 Policy: SAC, 20k steps, seed 0. Inference is with `mlp.c` at `-O2`; at the IDF default `-Og` it was 394 us.
 
