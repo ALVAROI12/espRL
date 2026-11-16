@@ -1,0 +1,7 @@
+# Only protocol bytes may cross USB-Serial/JTAG: no console, no boot or app logs.
+CONFIG_ESP_CONSOLE_NONE=y
+CONFIG_ESP_CONSOLE_SECONDARY_NONE=y
+CONFIG_BOOTLOADER_LOG_LEVEL_NONE=y
+CONFIG_LOG_DEFAULT_LEVEL_NONE=y
+# Inference time = cycles / 240.
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
