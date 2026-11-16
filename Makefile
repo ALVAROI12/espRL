@@ -3,6 +3,8 @@ IDF  := tools/idf.sh
 PY   := .venv/bin/python
 # Arduino Nano ESP32. USB is not passed into the IDF container, so flash from the host.
 PORT ?= $(firstword $(wildcard /dev/cu.usbmodem*))
+# pendulum | cartpole_balance | cartpole_swingup; train, hil and viz must use the env that was flashed.
+ENV  ?= pendulum
 
 .PHONY: setup test train fw flash hil viz
 
@@ -14,7 +16,7 @@ test:
 	$(PY) -m pytest -q
 
 train:
-	$(PY) train.py
+	$(PY) train.py $(ENV)
 
 fw:
 	$(IDF) firmware -B build-esp32s3 -D SDKCONFIG=build-esp32s3/sdkconfig -D IDF_TARGET=esp32s3 build
@@ -25,8 +27,8 @@ flash:
 		write-flash @flash_args && exit 0; sleep 1; done; exit 1
 
 hil:
-	$(PY) hil.py $(PORT)
+	$(PY) hil.py $(PORT) $(ENV)
 
 # Live window; VIZ_ARGS="--save out/hil.gif" records one episode instead.
 viz:
-	$(PY) viz.py $(PORT) $(VIZ_ARGS)
+	$(PY) viz.py $(PORT) --env $(ENV) $(VIZ_ARGS)
