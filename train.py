@@ -41,7 +41,7 @@ def main() -> int:
     model.learn(total_timesteps=steps)
     MODEL.parent.mkdir(exist_ok=True)
     model.save(MODEL)
-    export_header(model, HEADER)
+    export_header(model, HEADER, "pendulum")
     mean = float(np.mean(evaluate(model)))
     print(f"timesteps {steps}  mean return {mean:.1f}  (gate > {MIN_RETURN})")
     return 0 if mean > MIN_RETURN else 1

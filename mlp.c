@@ -5,12 +5,14 @@
 
 #include "policy_weights.h"
 
-_Static_assert(POLICY_OBS == 3 && POLICY_ACT == 1, "mlp_forward signature assumes 3 observations, 1 action");
+_Static_assert(POLICY_OBS <= MLP_MAX_OBS && POLICY_ACT == 1, "mlp_forward returns 1 action; obs must fit MLP_MAX_OBS");
+
+const int mlp_n_obs = POLICY_OBS;
 
 static float h0[POLICY_HIDDEN];
 static float h1[POLICY_HIDDEN];
 
-float mlp_forward(const float obs[3])
+float mlp_forward(const float *obs)
 {
     for (int i = 0; i < POLICY_HIDDEN; i++) {
         float s = policy_b0[i];

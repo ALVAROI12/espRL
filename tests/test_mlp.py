@@ -6,9 +6,11 @@ from pathlib import Path
 
 import gymnasium as gym
 import numpy as np
+import pytest
 from stable_baselines3 import SAC
 
-from export import export_header, reference_action
+import cartpole  # noqa: F401  (registers espRL/CartPole-v0)
+from export import export_header, header_env, reference_action
 
 RL = Path(__file__).resolve().parents[1]
 
@@ -28,13 +30,26 @@ def c_action(lib: ctypes.CDLL, obs: np.ndarray) -> float:
     return lib.mlp_forward(o.ctypes.data_as(ctypes.POINTER(ctypes.c_float)))
 
 
-def test_c_forward_matches_torch(tmp_path):
-    model = SAC("MlpPolicy", gym.make("Pendulum-v1"), policy_kwargs=dict(net_arch=[64, 64]), seed=0)  # untrained
-    export_header(model, tmp_path / "policy_weights.h")
+def pendulum_obs(rng, n):
+    th, thd = rng.uniform(-np.pi, np.pi, n), rng.uniform(-8, 8, n)
+    return np.stack([np.cos(th), np.sin(th), thd], 1)
+
+
+def cartpole_obs(rng, n):
+    th = rng.uniform(-np.pi, np.pi, n)
+    return np.stack([rng.uniform(-2.4, 2.4, n), rng.uniform(-5, 5, n), np.cos(th), np.sin(th),
+                     rng.uniform(-10, 10, n)], 1)
+
+
+@pytest.mark.parametrize("name,env_id,obs_fn", [("pendulum", "Pendulum-v1", pendulum_obs),
+                                                ("cartpole_balance", "espRL/CartPole-v0", cartpole_obs)])
+def test_c_forward_matches_torch(tmp_path, name, env_id, obs_fn):
+    model = SAC("MlpPolicy", gym.make(env_id), policy_kwargs=dict(net_arch=[64, 64]), seed=0)  # untrained
+    header = tmp_path / "policy_weights.h"
+    export_header(model, header, name)
+    assert header_env(header) == name
     lib = build_mlp(tmp_path)
-    rng = np.random.default_rng(0)
-    th = rng.uniform(-np.pi, np.pi, 1000)
-    thd = rng.uniform(-8, 8, 1000)
-    obs = np.stack([np.cos(th), np.sin(th), thd], 1).astype(np.float32)
+    obs = obs_fn(np.random.default_rng(0), 1000).astype(np.float32)
+    assert ctypes.c_int.in_dll(lib, "mlp_n_obs").value == obs.shape[1]
     err = max(abs(c_action(lib, o) - reference_action(model, o)) for o in obs)
     assert err < 1e-5
