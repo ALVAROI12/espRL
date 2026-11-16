@@ -44,7 +44,9 @@ static void run_episode(void)
         uint32_t t0 = esp_cpu_get_cycle_count();
         float obs[CARTPOLE_OBS];
         cartpole_obs(s, obs);
-        float action = mlp_forward(obs);
+        float act[MLP_MAX_ACT];
+        mlp_forward(obs, act);
+        float action = act[0]; /* cart-pole: 1 action */
         uint8_t flags = cartpole_step(s, action) ? 1 : 0;
         uint32_t cycles = esp_cpu_get_cycle_count() - t0;
         if (k == CARTPOLE_STEPS - 1) flags |= 2;
@@ -70,7 +72,7 @@ void app_main(void)
     for (;;) {
         uint8_t b;
         if (usb_serial_jtag_read_bytes(&b, 1, portMAX_DELAY) != 1) continue;
-        if (b == EP_REQ && mlp_n_obs == CARTPOLE_OBS) run_episode();
+        if (b == EP_REQ && mlp_n_obs == CARTPOLE_OBS && mlp_n_act == 1) run_episode();
         if (b != REQ) continue;
         uint8_t req[1 + 4 * MLP_MAX_OBS]; /* seq + mlp_n_obs x f32 */
         if (!read_exact(req, 1 + 4 * mlp_n_obs)) continue;
@@ -78,12 +80,13 @@ void app_main(void)
         memcpy(obs, req + 1, 4 * mlp_n_obs);
 
         uint32_t t0 = esp_cpu_get_cycle_count();
-        float action = mlp_forward(obs);
+        float act[MLP_MAX_ACT];
+        mlp_forward(obs, act);
         uint32_t cycles = esp_cpu_get_cycle_count() - t0;
 
-        uint8_t rep[10] = {REP, req[0]};
-        memcpy(rep + 2, &action, 4);
-        memcpy(rep + 6, &cycles, 4);
-        usb_serial_jtag_write_bytes(rep, sizeof rep, pdMS_TO_TICKS(50));
+        uint8_t rep[2 + 4 * MLP_MAX_ACT + 4] = {REP, req[0]}; /* seq, mlp_n_act x f32, cycles */
+        memcpy(rep + 2, act, 4 * mlp_n_act);
+        memcpy(rep + 2 + 4 * mlp_n_act, &cycles, 4);
+        usb_serial_jtag_write_bytes(rep, 2 + 4 * mlp_n_act + 4, pdMS_TO_TICKS(50));
     }
 }

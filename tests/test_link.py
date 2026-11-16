@@ -36,6 +36,10 @@ def reply(seq, action, cycles):
     return struct.pack("<BBfI", 0x5A, seq, action, cycles)
 
 
+def reply2(seq, actions, cycles):
+    return struct.pack("<BB2fI", 0x5A, seq, *actions, cycles)
+
+
 def make():
     fake = FakeSerial()
     return Link("fake", timeout=0.05, serial_obj=fake), fake
@@ -44,13 +48,13 @@ def make():
 def test_reply_after_junk():
     link, fake = make()
     fake.rx += b"ESP-ROM:esp32s3\r\n" + reply(0, 0.5, 1234)
-    assert link.act(np.zeros(3)) == (0.5, 1234)
+    assert link.act(np.zeros(3)) == ((0.5,), 1234)
 
 
 def test_stale_seq_skipped():
     link, fake = make()
     fake.rx += reply(7, -1.0, 1) + reply(0, 0.25, 2)
-    assert link.act(np.zeros(3)) == (0.25, 2)
+    assert link.act(np.zeros(3)) == ((0.25,), 2)
 
 
 def test_timeout_returns_none():
@@ -62,7 +66,7 @@ def test_seq_wraps():
     link, fake = make()
     for i in range(300):
         fake.rx += reply(i % 256, 1.0, i)
-        assert link.act(np.zeros(3)) == (1.0, i)
+        assert link.act(np.zeros(3)) == ((1.0,), i)
 
 
 def test_request_bytes():
@@ -77,7 +81,7 @@ def test_reply_does_not_wait_for_read_timeout():
     link = Link("fake", timeout=0.1, serial_obj=fake)
     fake.rx += reply(0, 0.5, 1)
     t0 = time.perf_counter()
-    assert link.act(np.zeros(3)) == (0.5, 1)
+    assert link.act(np.zeros(3)) == ((0.5,), 1)
     assert time.perf_counter() - t0 < 0.003  # a full 10-byte reply is ready: no 5 ms read timeout in the RTT
 
 
@@ -111,3 +115,11 @@ def test_episode_request_and_frames():
     assert (step, state, action, cycles, t_us, flags) == (0, (1.0, 2.0, 3.0, 4.0), 0.5, 7, 100, 0)
     assert link.frame(seq)[0] == 1
     assert link.frame(seq) is None  # nothing more: timeout
+
+
+def test_two_actions():
+    fake = FakeSerial()
+    link = Link("fake", timeout=0.05, serial_obj=fake, n_act=2)
+    fake.rx += reply2(0, (0.5, -0.25), 9)
+    assert link.act(np.zeros(8)) == ((0.5, -0.25), 9)
+    assert len(fake.tx) == 2 + 4 * 8

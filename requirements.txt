@@ -1,4 +1,4 @@
-gymnasium>=1.0
+gymnasium[box2d]>=1.0  # box2d: LunarLander
 stable-baselines3>=2.4
 torch>=2.4
 numpy>=2.0

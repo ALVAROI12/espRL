@@ -5,14 +5,15 @@
 
 #include "policy_weights.h"
 
-_Static_assert(POLICY_OBS <= MLP_MAX_OBS && POLICY_ACT == 1, "mlp_forward returns 1 action; obs must fit MLP_MAX_OBS");
+_Static_assert(POLICY_OBS <= MLP_MAX_OBS && POLICY_ACT <= MLP_MAX_ACT, "policy must fit MLP_MAX_OBS / MLP_MAX_ACT");
 
 const int mlp_n_obs = POLICY_OBS;
+const int mlp_n_act = POLICY_ACT;
 
 static float h0[POLICY_HIDDEN];
 static float h1[POLICY_HIDDEN];
 
-float mlp_forward(const float *obs)
+void mlp_forward(const float *obs, float *act)
 {
     for (int i = 0; i < POLICY_HIDDEN; i++) {
         float s = policy_b0[i];
@@ -24,7 +25,9 @@ float mlp_forward(const float *obs)
         for (int j = 0; j < POLICY_HIDDEN; j++) s += policy_w1[i][j] * h0[j];
         h1[i] = s > 0.0f ? s : 0.0f;
     }
-    float mu = policy_b2[0];
-    for (int j = 0; j < POLICY_HIDDEN; j++) mu += policy_w2[0][j] * h1[j];
-    return tanhf(mu) * POLICY_ACTION_SCALE;
+    for (int i = 0; i < POLICY_ACT; i++) {
+        float mu = policy_b2[i];
+        for (int j = 0; j < POLICY_HIDDEN; j++) mu += policy_w2[i][j] * h1[j];
+        act[i] = tanhf(mu) * POLICY_ACTION_SCALE;
+    }
 }

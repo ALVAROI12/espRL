@@ -60,7 +60,7 @@ def run(link: Link, model: SAC, name: str, episodes: int = 10, seed: int = 0) ->
         incomplete += not complete(frames)
         total, cos_hist, terminated = 0.0, [], False
         for _, state, action, cyc, _, flags in frames:
-            diffs.append(abs(action - reference_action(model, obs_of(prev))))
+            diffs.append(abs(action - reference_action(model, obs_of(prev))[0]))
             cycles.append(cyc)
             terminated = bool(flags & 1)
             total += OUT_OF_TRACK if terminated else reward(state, action)

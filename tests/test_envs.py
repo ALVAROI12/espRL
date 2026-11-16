@@ -21,6 +21,8 @@ def test_gate():
     assert not train.gate("pendulum", [-300.0] * 10, [True] * 10)[0]
     assert train.gate("cartpole_balance", [0.0] * 10, [True] * 9 + [False])[0]
     assert not train.gate("cartpole_swingup", [0.0] * 10, [True] * 8 + [False] * 2)[0]
+    assert train.gate("lunarlander", [210.0] * 10, [False] * 10)[0]
+    assert not train.gate("lunarlander", [190.0] * 10, [False] * 10)[0]
 
 
 def test_unknown_env():

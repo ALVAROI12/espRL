@@ -1,14 +1,15 @@
 # espRL: RL on the ESP32 (hardware-in-the-loop)
 
 A SAC policy is trained on the Mac and runs as plain C (`mlp.c`) on an Arduino Nano ESP32 (ESP32-S3).
-The Mac steps the env and gets every action from the board over USB. Envs: Gymnasium `Pendulum-v1`, and an own
-continuous cart-pole (`cartpole.py`) with two tasks, balance and swing-up.
+The Mac steps the env and gets every action from the board over USB. Envs: Gymnasium `Pendulum-v1` and
+`LunarLander-v3` (continuous, 2 actions), and an own continuous cart-pole (`cartpole.py`) with two tasks, balance
+and swing-up.
 Design: `docs/superpowers/specs/2026-11-16-esp32-rl-hil-design.md`, `docs/superpowers/specs/2026-11-16-cartpole-design.md`.
 
 ```
 make setup               # .venv (torch, SB3, gymnasium)
 make test                # host tests: C forward pass vs torch, serial protocol
-make train [ENV=...]     # pendulum (default) | cartpole_balance | cartpole_swingup;
+make train [ENV=...]     # pendulum (default) | cartpole_balance | cartpole_swingup | lunarlander;
                          # writes out/<env>.zip + firmware/main/policy_weights.h
 colima start             # Docker for ESP-IDF
 make fw                  # firmware/build-esp32s3
@@ -71,6 +72,22 @@ physics step by step against `cartpole.py` instead. The pendulum stays HIL only.
 | Step period | 19997-20001 us | 19997-20000 us | 20000 +- 1000 us |
 | Compute per step (obs + policy + physics) | 108.6 us p50 | 110.4 us p50 | reported |
 
+### Lunar lander (2026-11-16, same board, HIL)
+
+`LunarLander-v3` with `continuous=True`: 8 observations, 2 actions (main and lateral engine). Box2D physics on the
+Mac. Gate: mean return > 200 (Gymnasium's "solved").
+
+| Metric | Value | Gate |
+|---|---|---|
+| Steps / lost replies | 2443 / 0 | 0 lost |
+| Mean return, chip / Python alone (10 episodes) | 269.1 / 269.1 | > 200 |
+| Max abs action difference chip vs torch | 1.83e-6 | < 1e-4 |
+| Inference, 8-64-64-2 float MLP | 112.4 us p50, 118.1 us p99 | reported |
+| USB round trip | 0.25 ms p50, 0.34 ms p99 | reported |
+
+Policy: SAC, 300k steps, seed 0, settings from rl-baselines3-zoo (lr 7.3e-4, batch 256, tau 0.01), about 12 min on
+the Mac.
+
 ## Clips
 
 Recorded from the board with `make viz ... VIZ_ARGS="[--onchip] --save out/x.gif"` (re-encoded with ffmpeg).
@@ -83,6 +100,10 @@ Swing-up, physics and policy on the ESP32:
 Balance, physics and policy on the ESP32:
 
 ![cart-pole balance on the ESP32](media/cartpole_balance_onchip.gif)
+
+Lunar lander, policy on the ESP32 (HIL, two episodes):
+
+![lunar lander, policy on the ESP32](media/lunarlander_hil.gif)
 
 HIL (physics on the Mac, policy on the ESP32): [pendulum](media/pendulum_hil.gif),
 [cart-pole balance](media/cartpole_balance_hil.gif), [cart-pole swing-up](media/cartpole_swingup_hil.gif).

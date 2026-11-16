@@ -49,9 +49,10 @@ def run(link: Link, model: SAC, name: str, episodes: int = 10, seed: int = 0) ->
         if r is None:
             lost[0] += 1
             return ref  # keep the episode going; the lost gate already fails the run
-        diffs.append(abs(r[0] - ref))
+        chip = np.array(r[0], dtype=np.float32)
+        diffs.append(float(np.abs(chip - ref).max()))
         cycles.append(r[1])
-        return r[0]
+        return chip
 
     runs = [train.rollout(name, env, act, seed + i) for i in range(episodes)]
     returns, successes = [r for r, _ in runs], [s for _, s in runs]
@@ -87,7 +88,7 @@ def main() -> int:
         return 2
     episodes = int(sys.argv[3]) if len(sys.argv) > 3 else 10
     model = SAC.load(train.model_path(name))
-    link = Link(port)
+    link = Link(port, n_act=model.action_space.shape[0])
     try:
         rep = run(link, model, name, episodes)
     finally:

@@ -20,14 +20,16 @@ def build_mlp(include_dir: Path) -> ctypes.CDLL:
     subprocess.run(["cc", "-std=c11", "-O2", "-Wall", "-Werror", "-shared", "-fPIC", f"-I{include_dir}",
                     f"-I{RL}", str(RL / "mlp.c"), "-o", str(lib), "-lm"], check=True)
     dll = ctypes.CDLL(str(lib))
-    dll.mlp_forward.argtypes = [ctypes.POINTER(ctypes.c_float)]
-    dll.mlp_forward.restype = ctypes.c_float
+    dll.mlp_forward.argtypes = [ctypes.POINTER(ctypes.c_float), ctypes.POINTER(ctypes.c_float)]
+    dll.mlp_forward.restype = None
     return dll
 
 
-def c_action(lib: ctypes.CDLL, obs: np.ndarray) -> float:
+def c_action(lib: ctypes.CDLL, obs: np.ndarray) -> np.ndarray:
     o = np.ascontiguousarray(obs, dtype=np.float32)
-    return lib.mlp_forward(o.ctypes.data_as(ctypes.POINTER(ctypes.c_float)))
+    act = np.zeros(ctypes.c_int.in_dll(lib, "mlp_n_act").value, dtype=np.float32)
+    lib.mlp_forward(o.ctypes.data_as(ctypes.POINTER(ctypes.c_float)), act.ctypes.data_as(ctypes.POINTER(ctypes.c_float)))
+    return act
 
 
 def pendulum_obs(rng, n):
@@ -41,15 +43,22 @@ def cartpole_obs(rng, n):
                      rng.uniform(-10, 10, n)], 1)
 
 
-@pytest.mark.parametrize("name,env_id,obs_fn", [("pendulum", "Pendulum-v1", pendulum_obs),
-                                                ("cartpole_balance", "espRL/CartPole-v0", cartpole_obs)])
-def test_c_forward_matches_torch(tmp_path, name, env_id, obs_fn):
-    model = SAC("MlpPolicy", gym.make(env_id), policy_kwargs=dict(net_arch=[64, 64]), seed=0)  # untrained
+def lander_obs(rng, n):
+    return np.concatenate([rng.uniform(-2, 2, (n, 6)), rng.integers(0, 2, (n, 2))], 1)
+
+
+@pytest.mark.parametrize("name,env,obs_fn,n_act", [
+    ("pendulum", lambda: gym.make("Pendulum-v1"), pendulum_obs, 1),
+    ("cartpole_balance", lambda: gym.make("espRL/CartPole-v0"), cartpole_obs, 1),
+    ("lunarlander", lambda: gym.make("LunarLander-v3", continuous=True), lander_obs, 2)])
+def test_c_forward_matches_torch(tmp_path, name, env, obs_fn, n_act):
+    model = SAC("MlpPolicy", env(), policy_kwargs=dict(net_arch=[64, 64]), seed=0)  # untrained
     header = tmp_path / "policy_weights.h"
     export_header(model, header, name)
     assert header_env(header) == name
     lib = build_mlp(tmp_path)
     obs = obs_fn(np.random.default_rng(0), 1000).astype(np.float32)
     assert ctypes.c_int.in_dll(lib, "mlp_n_obs").value == obs.shape[1]
-    err = max(abs(c_action(lib, o) - reference_action(model, o)) for o in obs)
+    assert ctypes.c_int.in_dll(lib, "mlp_n_act").value == n_act
+    err = max(np.abs(c_action(lib, o) - reference_action(model, o)).max() for o in obs)
     assert err < 1e-5

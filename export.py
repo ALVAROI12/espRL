@@ -25,7 +25,8 @@ def export_header(model: SAC, path: str | Path, env_name: str) -> None:
     w = [lp[0].weight, lp[0].bias, lp[2].weight, lp[2].bias, mu.weight, mu.bias]
     w0, b0, w1, b1, w2, b2 = (t.detach().cpu().numpy() for t in w)
     high = float(model.action_space.high[0])
-    assert np.allclose(model.action_space.low, -high), "mlp.c assumes a symmetric action bound"
+    assert np.allclose(model.action_space.high, high) and np.allclose(model.action_space.low, -high), \
+        "mlp.c assumes one symmetric bound for every action"
     names = ["policy_w0", "policy_b0", "policy_w1", "policy_b1", "policy_w2", "policy_b2"]
     body = "".join(_array(n, a) for n, a in zip(names, [w0, b0, w1, b1, w2, b2]))
     Path(path).write_text(
@@ -42,5 +43,6 @@ def header_env(path: str | Path) -> str | None:
     return m.group(1) if m else None
 
 
-def reference_action(model: SAC, obs: np.ndarray) -> float:
-    return float(model.predict(np.asarray(obs, dtype=np.float32), deterministic=True)[0][0])
+def reference_action(model: SAC, obs: np.ndarray) -> np.ndarray:
+    """Deterministic torch action(s), shape (POLICY_ACT,), float32."""
+    return model.predict(np.asarray(obs, dtype=np.float32), deterministic=True)[0].astype(np.float32)

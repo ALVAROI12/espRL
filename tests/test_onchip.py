@@ -21,7 +21,7 @@ class FakeChip:
         env.state = np.asarray(state, dtype=float)
         self.frames = []
         for k in range(500):
-            a = reference_action(self.model, env._obs())
+            a = float(reference_action(self.model, env._obs())[0])
             _, _, term, _, _ = env.step(np.array([a]))
             flags = int(term) | (2 if k == 499 else 0)
             if k != self.drop:
