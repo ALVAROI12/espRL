@@ -16,6 +16,8 @@ make flash [PORT=...]    # default PORT = first /dev/cu.usbmodem*
 make hil [ENV=...]       # 10 episodes on the board; report in out/hil_<env>.json
 make viz [ENV=...]       # live window: pendulum or cart + chip/torch action, inference us, USB round trip
 make viz VIZ_ARGS="--save out/hil.gif"   # record one episode instead
+make onchip ENV=cartpole_swingup         # cart-pole physics + policy both on the chip, 50 Hz; out/onchip_<env>.json
+make viz ENV=cartpole_swingup VIZ_ARGS=--onchip   # live view of the on-chip run
 ```
 
 `make train ENV=x` and `make fw flash` go together: the board must run the header from the same model `make hil`
@@ -51,6 +53,39 @@ Own env (`cartpole.py`): frictionless cart-pole, 1 kg cart, 0.1 kg pole of 1 m, 
 
 Policies: SAC, seed 0, 60k steps (balance; 30k missed the gate) and 200k steps (swing-up), about 1 and 4 min
 on the Mac. `make viz ENV=cartpole_swingup VIZ_ARGS="--save out/cartpole_swingup.gif"` records the swing-up.
+
+### Physics on the chip too (2026-11-16, same board)
+
+`make onchip`: the ESP32 runs the cart-pole physics (`cartpole.c`, a float32 port of `cartpole.py`) and the policy,
+one step every 20 ms (FreeRTOS `vTaskDelayUntil`), and streams every step over USB. The Mac only sends each
+episode's initial state, then checks the stream: the torch actor on the chip's own observation (action diff),
+successes on the chip's own trajectory, no dropped frames, and the step period. The chip computes in float32, so
+on swing-up its trajectory is not compared with the Python float64 run; `tests/test_cartpole_c.py` checks the C
+physics step by step against `cartpole.py` instead. The pendulum stays HIL only.
+
+| Metric | Balance | Swing-up | Gate |
+|---|---|---|---|
+| Steps / incomplete episodes | 5000 / 0 | 5000 / 0 | 0 incomplete |
+| Successes, chip (10 episodes) | 10/10 | 10/10 | >= 9/10 |
+| Max abs action difference chip vs torch | 1.85e-6 | 3.23e-6 | < 1e-4 |
+| Step period | 19997-20001 us | 19997-20000 us | 20000 +- 1000 us |
+| Compute per step (obs + policy + physics) | 108.6 us p50 | 110.4 us p50 | reported |
+
+## Clips
+
+Recorded from the board with `make viz ... VIZ_ARGS="[--onchip] --save out/x.gif"` (re-encoded with ffmpeg).
+On-chip clips play in real time (50 fps); HIL clips play at 20 fps.
+
+Swing-up, physics and policy on the ESP32:
+
+![cart-pole swing-up on the ESP32](media/cartpole_swingup_onchip.gif)
+
+Balance, physics and policy on the ESP32:
+
+![cart-pole balance on the ESP32](media/cartpole_balance_onchip.gif)
+
+HIL (physics on the Mac, policy on the ESP32): [pendulum](media/pendulum_hil.gif),
+[cart-pole balance](media/cartpole_balance_hil.gif), [cart-pole swing-up](media/cartpole_swingup_hil.gif).
 
 ## Board notes
 
