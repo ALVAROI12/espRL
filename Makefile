@@ -6,7 +6,7 @@ PORT ?= $(firstword $(wildcard /dev/cu.usbmodem*))
 # pendulum | cartpole_balance | cartpole_swingup; train, hil and viz must use the env that was flashed.
 ENV  ?= pendulum
 
-.PHONY: setup test train fw flash hil viz
+.PHONY: setup test train fw flash hil onchip viz
 
 setup:
 	uv venv --python 3.12 .venv
@@ -28,6 +28,10 @@ flash:
 
 hil:
 	$(PY) hil.py $(PORT) $(ENV)
+
+# Cart-pole physics and policy both on the chip, 50 Hz; the Mac only starts episodes and checks them.
+onchip:
+	$(PY) onchip.py $(PORT) $(ENV)
 
 # Live window; VIZ_ARGS="--save out/hil.gif" records one episode instead.
 viz:

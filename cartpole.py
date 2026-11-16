@@ -17,6 +17,17 @@ OUT_OF_TRACK = -100.0
 W_X, W_U = 0.1, 0.001
 
 
+def reward(state, action: float) -> float:
+    """Step reward from the state after the step (x, x_dot, th, th_dot) and the action in [-1, 1]; on the track."""
+    u = FORCE_MAX * float(np.clip(action, -1.0, 1.0))
+    return float(np.cos(state[2]) - W_X * state[0] ** 2 - W_U * u * u)
+
+
+def obs_of(state) -> np.ndarray:
+    x, xd, th, thd = state
+    return np.array([x, xd, np.cos(th), np.sin(th), thd], dtype=np.float32)
+
+
 class CartPole(gym.Env):
     metadata = {"render_modes": []}
 
@@ -29,8 +40,7 @@ class CartPole(gym.Env):
         self.state = np.zeros(4)
 
     def _obs(self) -> np.ndarray:
-        x, xd, th, thd = self.state
-        return np.array([x, xd, np.cos(th), np.sin(th), thd], dtype=np.float32)
+        return obs_of(self.state)
 
     def reset(self, *, seed=None, options=None):
         super().reset(seed=seed)
@@ -54,7 +64,7 @@ class CartPole(gym.Env):
         self.state = np.array([x, xd, th, thd])
         if abs(x) > X_MAX:
             return self._obs(), OUT_OF_TRACK, True, False, {}
-        return self._obs(), float(np.cos(th) - W_X * x * x - W_U * u * u), False, False, {}
+        return self._obs(), reward(self.state, action[0]), False, False, {}
 
 
 gym.register("espRL/CartPole-v0", entry_point=CartPole, max_episode_steps=500)

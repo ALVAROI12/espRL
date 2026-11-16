@@ -1,6 +1,10 @@
 """Host side of the HIL serial protocol (docs/superpowers/specs/2026-11-16-esp32-rl-hil-design.md).
 
-Request: 0xA5, seq u8, POLICY_OBS x f32 obs (14 B pendulum, 22 B cart-pole). Reply 10 B: 0x5A, seq u8, f32 action, u32 inference cycles.
+HIL step (physics on the Mac): request 0xA5, seq u8, POLICY_OBS x f32 obs (14 B pendulum, 22 B cart-pole). Reply 10 B: 0x5A, seq u8, f32 action, u32 inference cycles.
+On-chip episode (cart-pole physics on the ESP32): request 18 B: 0xA6, seq u8, 4 x f32 initial state [x, x_dot, th,
+th_dot]. The chip then runs up to 500 steps at 50 Hz and sends one 33 B frame per step: 0x5B, seq u8, step u16,
+4 x f32 state after the step, f32 action, u32 compute cycles (obs + policy + physics), u32 step start time (us),
+u8 flags (bit 0: left the track, bit 1: last step).
 """
 
 from __future__ import annotations
@@ -13,6 +17,9 @@ import serial
 
 REQ, REP = 0xA5, 0x5A
 REPLY_SIZE = 10
+EP_REQ, FRAME = 0xA6, 0x5B
+FRAME_FMT = "<BBH4ffIIB"
+FRAME_SIZE = struct.calcsize(FRAME_FMT)  # 33
 
 
 class Link:
@@ -35,22 +42,43 @@ class Link:
             self.ser.write(struct.pack(f"<BB{o.size}f", REQ, seq, *o))
         except serial.SerialTimeoutException:
             return None
-        deadline = time.monotonic() + self.timeout
+        r = self._recv(REP, "<BBfI", self.timeout, seq)
+        return None if r is None else (r[0], r[1])
+
+    def start_episode(self, state: np.ndarray) -> int | None:
+        """Ask the chip to run one cart-pole episode from state; returns the seq its frames carry (None: write timeout)."""
+        seq = self.seq
+        self.seq = (self.seq + 1) & 0xFF
+        try:
+            self.ser.write(struct.pack("<BB4f", EP_REQ, seq, *np.asarray(state, dtype=np.float32)))
+        except serial.SerialTimeoutException:
+            return None
+        return seq
+
+    def frame(self, seq: int, timeout: float | None = None) -> tuple | None:
+        """Next frame of episode seq: (step, state 4-tuple, action, cycles, t_us, flags), or None if none in time."""
+        r = self._recv(FRAME, FRAME_FMT, self.timeout if timeout is None else timeout, seq)
+        return None if r is None else (r[0], tuple(r[1:5]), *r[5:])
+
+    def _recv(self, marker: int, fmt: str, timeout: float, seq: int) -> tuple | None:
+        """Fields after (marker, seq) of the next message with this marker and seq; skips junk and stale seqs."""
+        size = struct.calcsize(fmt)
+        deadline = time.monotonic() + timeout
         while True:
-            i = self.buf.find(REP)
+            i = self.buf.find(marker)
             if i < 0:
                 self.buf.clear()
-            elif len(self.buf) - i >= REPLY_SIZE:
-                _, rseq, action, cycles = struct.unpack_from("<BBfI", self.buf, i)
-                if rseq == seq:
-                    del self.buf[:i + REPLY_SIZE]
-                    return action, cycles
-                del self.buf[:i + 1]  # stale reply or a 0x5A inside junk: rescan from the next byte
+            elif len(self.buf) - i >= size:
+                fields = struct.unpack_from(fmt, self.buf, i)
+                if fields[1] == seq:
+                    del self.buf[:i + size]
+                    return fields[2:]
+                del self.buf[:i + 1]  # stale message or a marker byte inside junk: rescan from the next byte
                 continue
             if time.monotonic() > deadline:
                 return None
             # Ask for exactly the missing bytes: pyserial's read(n) waits out its timeout until n bytes arrive.
-            self.buf += self.ser.read(REPLY_SIZE if i < 0 else i + REPLY_SIZE - len(self.buf))
+            self.buf += self.ser.read(size if i < 0 else i + size - len(self.buf))
 
     def close(self) -> None:
         self.ser.close()

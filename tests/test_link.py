@@ -96,3 +96,18 @@ def test_request_bytes_cartpole():
     obs = np.array([0.1, -0.2, 1.0, 0.0, 0.5])
     link.act(obs)
     assert bytes(fake.tx) == struct.pack("<BB5f", 0xA5, 0, *obs) and len(fake.tx) == 22
+
+
+def frame(seq, step, state, action=0.0, cycles=0, t_us=0, flags=0):
+    return struct.pack("<BBH4ffIIB", 0x5B, seq, step, *state, action, cycles, t_us, flags)
+
+
+def test_episode_request_and_frames():
+    link, fake = make()
+    seq = link.start_episode(np.array([0.1, 0.0, 3.1, 0.0]))
+    assert bytes(fake.tx) == struct.pack("<BB4f", 0xA6, 0, 0.1, 0.0, 3.1, 0.0) and len(fake.tx) == 18
+    fake.rx += b"junk" + frame(9, 0, (9, 9, 9, 9)) + frame(seq, 0, (1, 2, 3, 4), 0.5, 7, 100, 0) + frame(seq, 1, (0, 0, 0, 0), flags=2)
+    step, state, action, cycles, t_us, flags = link.frame(seq)
+    assert (step, state, action, cycles, t_us, flags) == (0, (1.0, 2.0, 3.0, 4.0), 0.5, 7, 100, 0)
+    assert link.frame(seq)[0] == 1
+    assert link.frame(seq) is None  # nothing more: timeout

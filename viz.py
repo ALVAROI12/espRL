@@ -1,14 +1,18 @@
-"""Live view of the HIL loop: the pendulum or cart-pole the ESP32 is controlling, plus action / inference /
-round-trip traces.
+"""Live view of the loop: the pendulum or cart-pole the ESP32 is controlling, plus action / compute / timing traces.
 
-Usage: python viz.py PORT [--env ENV] [--save out.gif] [--episodes N]
+Usage: python viz.py PORT [--env ENV] [--onchip] [--save out.gif] [--episodes N]
+HIL (default): the Mac steps the env and asks the chip for each action; traces show inference us and USB round trip.
+--onchip (cart-pole only): the chip runs physics and policy at 50 Hz and streams each step; traces show compute per
+step and the chip's step period.
 Without --save it opens a window and runs episodes until closed; with --save it records N episodes (default 1).
 """
 
 from __future__ import annotations
 
 import argparse
+import queue
 import sys
+import threading
 import time
 from collections import deque
 
@@ -18,11 +22,49 @@ from matplotlib.animation import FuncAnimation, PillowWriter
 from matplotlib.patches import Rectangle
 from stable_baselines3 import SAC
 
-from export import reference_action
+import onchip
 import train
-from cartpole import HALF_LEN, X_MAX
+from cartpole import HALF_LEN, OUT_OF_TRACK, X_MAX, obs_of, reward
+from export import reference_action
 from hil import CPU_MHZ, ready
 from link import Link
+
+# One sample per step: obs to draw, chip action, torch action, us (compute), ms (timing), reward, done, lost.
+
+
+def hil_samples(link, model, env):
+    obs, ep = env.reset(seed=0)[0], 0
+    while True:
+        ref = reference_action(model, obs)
+        t0 = time.perf_counter()
+        r = link.act(obs)
+        ms = (time.perf_counter() - t0) * 1e3
+        action, us = (ref, np.nan) if r is None else (r[0], r[1] / CPU_MHZ)
+        draw = obs
+        obs, rew, term, trunc, _ = env.step(np.array([action], dtype=np.float32))
+        yield dict(obs=draw, action=action, ref=ref, us=us, ms=ms, reward=float(rew), done=term or trunc,
+                   lost=int(r is None))
+        if term or trunc:
+            ep += 1
+            obs = env.reset(seed=ep)[0]
+
+
+def onchip_samples(link, model, env):
+    ep = 0
+    while True:
+        env.reset(seed=ep)
+        prev, t_prev, n = np.float32(env.unwrapped.state), None, 0
+        for step, state, action, cyc, t_us, flags in onchip.stream(link, prev):
+            ms = np.nan if t_prev is None else ((t_us - t_prev) % 2**32) / 1e3
+            yield dict(obs=obs_of(state), action=action, ref=reference_action(model, obs_of(prev)), us=cyc / CPU_MHZ,
+                       ms=ms, reward=OUT_OF_TRACK if flags & 1 else reward(state, action), done=flags != 0,
+                       lost=step - n)
+            prev, t_prev, n = state, t_us, step + 1
+            if flags:
+                break
+        else:  # stream ended without the end flag: a late frame
+            yield dict(obs=obs_of(prev), action=np.nan, ref=np.nan, us=np.nan, ms=np.nan, reward=0.0, done=True, lost=1)
+        ep += 1
 
 
 def main() -> None:
@@ -31,14 +73,46 @@ def main() -> None:
     ap.add_argument("--save")
     ap.add_argument("--episodes", type=int, default=1)
     ap.add_argument("--env", default="pendulum")
+    ap.add_argument("--onchip", action="store_true")
     args = ap.parse_args()
+    if args.onchip and args.env == "pendulum":
+        sys.exit("--onchip runs the cart-pole physics on the chip: use --env cartpole_balance or cartpole_swingup")
     if not ready(args.env):
         sys.exit(2)
     model, link, env = SAC.load(train.model_path(args.env)), Link(args.port), train.make_env(args.env)
     cart = args.env != "pendulum"
     steps = env.spec.max_episode_steps  # traces show one episode
     scale = float(model.action_space.high[0])
-    st = {"obs": env.reset(seed=0)[0], "ep": 0, "step": 0, "ret": 0.0, "lost": 0}
+    samples = (onchip_samples if args.onchip else hil_samples)(link, model, env)
+
+    if args.save:  # on-chip: record first (the chip does not wait for rendering), then draw every step
+        if args.onchip:
+            recorded, eps = [], 0
+            while eps < args.episodes:
+                recorded.append(next(samples))
+                eps += recorded[-1]["done"]
+            it = iter(recorded)
+            n_frames = len(recorded)
+        else:
+            it, n_frames = samples, args.episodes * steps
+
+        def batch():  # FuncAnimation also draws an init frame, so the recording runs out one call early
+            s = next(it, None)
+            return [] if s is None else [s]
+    elif args.onchip:  # live on-chip: a reader thread keeps up with the 50 Hz stream, each redraw takes what came in
+        q = queue.Queue()
+        threading.Thread(target=lambda: [q.put(s) for s in samples], daemon=True).start()
+
+        def batch():
+            out = []
+            while not q.empty():
+                out.append(q.get())
+            return out
+    else:
+        def batch():
+            return [next(samples)]
+
+    st = {"ep": 0, "step": 0, "ret": 0.0, "lost": 0, "ended": False}
     hist = {k: deque(maxlen=steps) for k in ("chip", "torch", "us", "ms")}
 
     fig = plt.figure(figsize=(11, 5.5))
@@ -62,33 +136,32 @@ def main() -> None:
     l_ms, = ax_ms.plot([], [], color="#117a65")
     ax_a.set(ylim=(-1.1 * scale, 1.1 * scale), xlim=(0, steps), ylabel="force / 10" if cart else "torque")
     ax_a.legend(loc="upper right", fontsize=8)
-    ax_us.set(xlim=(0, steps), ylabel="inference us")
-    ax_ms.set(xlim=(0, steps), ylabel="USB rtt ms", xlabel="step")
+    ax_us.set(xlim=(0, steps), ylabel="step compute us" if args.onchip else "inference us")
+    ax_ms.set(xlim=(0, steps), ylabel="chip step period ms" if args.onchip else "USB rtt ms", xlabel="step")
+    if args.onchip:
+        ax_p.text(0.02, 0.96, "physics + policy on the ESP32, 50 Hz", transform=ax_p.transAxes, fontsize=8, va="top")
     fig.tight_layout()
 
     def update(_):
-        obs = st["obs"]
-        ref = reference_action(model, obs)
-        t0 = time.perf_counter()
-        r = link.act(obs)
-        ms = (time.perf_counter() - t0) * 1e3
-        if r is None:
-            st["lost"] += 1
-            action, us = ref, np.nan
-        else:
-            action, us = r[0], r[1] / CPU_MHZ
-        st["obs"], reward, term, trunc, _ = env.step(np.array([action], dtype=np.float32))
-        st["ret"] += float(reward)
-        st["step"] += 1
-        for k, v in (("chip", action), ("torch", ref), ("us", us), ("ms", ms)):
-            hist[k].append(v)
-
+        got = batch()
+        for s in got:
+            if st["ended"]:
+                st.update(ep=st["ep"] + 1, step=0, ret=0.0, ended=False)
+            st["ret"] += s["reward"]
+            st["step"] += 1
+            st["lost"] += s["lost"]
+            st["ended"] = s["done"]
+            for k, v in (("chip", s["action"]), ("torch", s["ref"]), ("us", s["us"]), ("ms", s["ms"])):
+                hist[k].append(v)
+        if not got:
+            return ()
+        obs, action = got[-1]["obs"], got[-1]["action"]
         if cart:  # obs = [x, x_dot, cos th, sin th, th_dot]; arrow = force on the cart, 0.5 m at full force
             x = float(obs[0])
             body.set_x(x - 0.2)
             rod.set_data([x, x + 2 * HALF_LEN * obs[3]], [0, 2 * HALF_LEN * obs[2]])
             torque.xyann = (x, 0)
-            torque.xy = (x + 0.5 * action, 0)
+            torque.xy = (x + 0.5 * np.nan_to_num(action), 0)
         else:
             th = np.arctan2(obs[1], obs[0])  # 0 = upright
             x, y = np.sin(th), np.cos(th)
@@ -107,17 +180,14 @@ def main() -> None:
             v = np.array(hist[k], dtype=float)
             if np.isfinite(v).any():
                 ax.set_ylim(0, np.nanmax(v) * 1.3)
-        if term or trunc:
-            st["ep"] += 1
-            st["step"], st["ret"] = 0, 0.0
-            st["obs"] = env.reset(seed=st["ep"])[0]
         return rod, torque, title, l_chip, l_torch, l_us, l_ms
 
-    anim = FuncAnimation(fig, update, frames=args.episodes * steps if args.save else None, interval=50,
+    fps = 50 if args.onchip else 20  # on-chip GIFs play in real time
+    anim = FuncAnimation(fig, update, frames=n_frames if args.save else None, interval=1000 / fps,
                          blit=False, cache_frame_data=False)
     try:
         if args.save:
-            anim.save(args.save, writer=PillowWriter(fps=20))
+            anim.save(args.save, writer=PillowWriter(fps=fps), dpi=100)  # 1100 x 550
             print(f"saved {args.save}")
         else:
             plt.show()
