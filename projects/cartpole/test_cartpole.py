@@ -4,8 +4,8 @@ import gymnasium as gym
 import numpy as np
 from gymnasium.utils.env_checker import check_env
 
-import cartpole  # noqa: F401  (registers espRL/CartPole-v0)
-from cartpole import CartPole
+import projects.cartpole.cartpole  # noqa: F401  (registers espRL/CartPole-v0)
+from projects.cartpole.cartpole import CartPole
 
 ZERO = np.zeros(1, dtype=np.float32)
 

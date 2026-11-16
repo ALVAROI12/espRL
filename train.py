@@ -14,7 +14,7 @@ import gymnasium as gym
 import numpy as np
 from stable_baselines3 import SAC
 
-import cartpole  # noqa: F401  (registers espRL/CartPole-v0)
+import projects.cartpole.cartpole  # noqa: F401  (registers espRL/CartPole-v0)
 from export import export_header, reference_action
 
 RL = Path(__file__).resolve().parent

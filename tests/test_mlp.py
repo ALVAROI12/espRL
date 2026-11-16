@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 from stable_baselines3 import SAC
 
-import cartpole  # noqa: F401  (registers espRL/CartPole-v0)
+import projects.cartpole.cartpole  # noqa: F401  (registers espRL/CartPole-v0)
 from export import export_header, header_env, reference_action
 
 RL = Path(__file__).resolve().parents[1]

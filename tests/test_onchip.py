@@ -5,7 +5,7 @@ from stable_baselines3 import SAC
 
 import onchip
 import train
-from cartpole import CartPole
+from projects.cartpole.cartpole import CartPole
 from export import reference_action
 
 

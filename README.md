@@ -1,112 +1,43 @@
-# espRL: RL on the ESP32 (hardware-in-the-loop)
+# espRL: RL on the ESP32
 
-A SAC policy is trained on the Mac and runs as plain C (`mlp.c`) on an Arduino Nano ESP32 (ESP32-S3).
-The Mac steps the env and gets every action from the board over USB. Envs: Gymnasium `Pendulum-v1` and
-`LunarLander-v3` (continuous, 2 actions), and an own continuous cart-pole (`cartpole.py`) with two tasks, balance
-and swing-up.
-Design: `docs/superpowers/specs/2026-11-16-esp32-rl-hil-design.md`, `docs/superpowers/specs/2026-11-16-cartpole-design.md`.
+RL policies trained on the Mac (Stable-Baselines3) and run as plain C (`mlp.c`) on an Arduino Nano ESP32
+(ESP32-S3). Hardware-in-the-loop (HIL): the Mac steps the env and gets every action from the board over USB.
+On-chip: the board runs the physics too, in real time, and streams each step to the Mac.
+
+![cart-pole swing-up, physics and policy on the ESP32](projects/cartpole/media/swingup_onchip.gif)
+
+## Projects
+
+One folder per project under `projects/`, with its env code, tests, results and clips.
+
+| Project | `ENV=` | Mode | Result on the board (10 episodes) |
+|---|---|---|---|
+| [Pendulum](projects/pendulum/) | `pendulum` | HIL | return -131.6 (gate > -250) |
+| [Cart-pole](projects/cartpole/) | `cartpole_balance`, `cartpole_swingup` | HIL + on-chip | 10/10 and 10/10 (gate >= 9/10) |
+| [Lunar lander](projects/lunarlander/) | `lunarlander` | HIL | return 269.1 (gate > 200) |
+
+Every run also gates chip vs torch max action difference < 1e-4 and 0 lost replies.
+
+## Pipeline (shared)
 
 ```
-make setup               # .venv (torch, SB3, gymnasium)
-make test                # host tests: C forward pass vs torch, serial protocol
-make train [ENV=...]     # pendulum (default) | cartpole_balance | cartpole_swingup | lunarlander;
-                         # writes out/<env>.zip + firmware/main/policy_weights.h
+make setup               # .venv (torch, SB3, gymnasium[box2d])
+make test                # host tests: C forward pass vs torch, serial protocol, project tests
+make train [ENV=...]     # writes out/<env>.zip + firmware/main/policy_weights.h
 colima start             # Docker for ESP-IDF
 make fw                  # firmware/build-esp32s3
 make flash [PORT=...]    # default PORT = first /dev/cu.usbmodem*
 make hil [ENV=...]       # 10 episodes on the board; report in out/hil_<env>.json
-make viz [ENV=...]       # live window: pendulum or cart + chip/torch action, inference us, USB round trip
-make viz VIZ_ARGS="--save out/hil.gif"   # record one episode instead
-make onchip ENV=cartpole_swingup         # cart-pole physics + policy both on the chip, 50 Hz; out/onchip_<env>.json
-make viz ENV=cartpole_swingup VIZ_ARGS=--onchip   # live view of the on-chip run
+make onchip ENV=...      # physics + policy on the chip (envs with a C port); out/onchip_<env>.json
+make viz [ENV=...] [VIZ_ARGS="--onchip --save out/x.gif"]   # live view, or record
 ```
 
 `make train ENV=x` and `make fw flash` go together: the board must run the header from the same model `make hil`
-loads. `hil.py`/`viz.py` refuse to run (exit 2) when the header was exported for another env. `PORT=` works on
-every board target (default: first /dev/cu.usbmodem*).
+loads. `hil.py`/`onchip.py`/`viz.py` refuse to run (exit 2) when the header was exported for another env.
+Design: `docs/superpowers/specs/2026-11-16-esp32-rl-hil-design.md`.
 
-## Results (2026-11-16, Arduino Nano ESP32, ESP32-S3 rev v0.2 at 240 MHz)
-
-| Metric | Value | Gate |
-|---|---|---|
-| Steps / lost replies | 2000 / 0 | 0 lost |
-| Mean return, chip (10 episodes) | -131.6 | > -250 |
-| Mean return, Python alone, same seeds | -131.6 | reported |
-| Max abs action difference chip vs torch | 1.85e-6 | < 1e-4 |
-| Inference, 3-64-64-1 float MLP | 99.0 us p50, 99.3 us p99 (23.8k cycles) | reported |
-| USB round trip | 0.22 ms p50, 0.29 ms p99 | reported |
-
-Policy: SAC, 20k steps, seed 0. Inference is with `mlp.c` at `-O2`; at the IDF default `-Og` it was 394 us.
-
-### Cart-pole (2026-11-16, same board)
-
-Own env (`cartpole.py`): frictionless cart-pole, 1 kg cart, 0.1 kg pole of 1 m, force +-10 N, track +-2.4 m,
-50 Hz, 500 steps. Success = never leaves the track and cos th > 0.95 for each of the last 100 steps.
-
-| Metric | Balance | Swing-up | Gate |
-|---|---|---|---|
-| Steps / lost replies | 5000 / 0 | 5000 / 0 | 0 lost |
-| Successes, chip (10 episodes) | 10/10 | 10/10 | >= 9/10 |
-| Mean return, chip / Python alone | 497.8 / 497.8 | 391.2 / 391.2 | reported |
-| Max abs action difference chip vs torch | 1.66e-6 | 3.07e-6 | < 1e-4 |
-| Inference, 5-64-64-1 float MLP | 105.3 us p50, 105.6 us p99 | 105.3 us p50, 111.1 us p99 | reported |
-| USB round trip | 0.23 ms p50, 0.32 ms p99 | 0.23 ms p50, 0.32 ms p99 | reported |
-
-Policies: SAC, seed 0, 60k steps (balance; 30k missed the gate) and 200k steps (swing-up), about 1 and 4 min
-on the Mac. `make viz ENV=cartpole_swingup VIZ_ARGS="--save out/cartpole_swingup.gif"` records the swing-up.
-
-### Physics on the chip too (2026-11-16, same board)
-
-`make onchip`: the ESP32 runs the cart-pole physics (`cartpole.c`, a float32 port of `cartpole.py`) and the policy,
-one step every 20 ms (FreeRTOS `vTaskDelayUntil`), and streams every step over USB. The Mac only sends each
-episode's initial state, then checks the stream: the torch actor on the chip's own observation (action diff),
-successes on the chip's own trajectory, no dropped frames, and the step period. The chip computes in float32, so
-on swing-up its trajectory is not compared with the Python float64 run; `tests/test_cartpole_c.py` checks the C
-physics step by step against `cartpole.py` instead. The pendulum stays HIL only.
-
-| Metric | Balance | Swing-up | Gate |
-|---|---|---|---|
-| Steps / incomplete episodes | 5000 / 0 | 5000 / 0 | 0 incomplete |
-| Successes, chip (10 episodes) | 10/10 | 10/10 | >= 9/10 |
-| Max abs action difference chip vs torch | 1.85e-6 | 3.23e-6 | < 1e-4 |
-| Step period | 19997-20001 us | 19997-20000 us | 20000 +- 1000 us |
-| Compute per step (obs + policy + physics) | 108.6 us p50 | 110.4 us p50 | reported |
-
-### Lunar lander (2026-11-16, same board, HIL)
-
-`LunarLander-v3` with `continuous=True`: 8 observations, 2 actions (main and lateral engine). Box2D physics on the
-Mac. Gate: mean return > 200 (Gymnasium's "solved").
-
-| Metric | Value | Gate |
-|---|---|---|
-| Steps / lost replies | 2443 / 0 | 0 lost |
-| Mean return, chip / Python alone (10 episodes) | 269.1 / 269.1 | > 200 |
-| Max abs action difference chip vs torch | 1.83e-6 | < 1e-4 |
-| Inference, 8-64-64-2 float MLP | 112.4 us p50, 118.1 us p99 | reported |
-| USB round trip | 0.25 ms p50, 0.34 ms p99 | reported |
-
-Policy: SAC, 300k steps, seed 0, settings from rl-baselines3-zoo (lr 7.3e-4, batch 256, tau 0.01), about 12 min on
-the Mac.
-
-## Clips
-
-Recorded from the board with `make viz ... VIZ_ARGS="[--onchip] --save out/x.gif"` (re-encoded with ffmpeg).
-On-chip clips play in real time (50 fps); HIL clips play at 20 fps.
-
-Swing-up, physics and policy on the ESP32:
-
-![cart-pole swing-up on the ESP32](media/cartpole_swingup_onchip.gif)
-
-Balance, physics and policy on the ESP32:
-
-![cart-pole balance on the ESP32](media/cartpole_balance_onchip.gif)
-
-Lunar lander, policy on the ESP32 (HIL, two episodes):
-
-![lunar lander, policy on the ESP32](media/lunarlander_hil.gif)
-
-HIL (physics on the Mac, policy on the ESP32): [pendulum](media/pendulum_hil.gif),
-[cart-pole balance](media/cartpole_balance_hil.gif), [cart-pole swing-up](media/cartpole_swingup_hil.gif).
+Root files: `mlp.c`/`mlp.h` (policy forward pass, host and chip), `export.py` (SB3 actor to C header), `link.py`
+(serial protocol), `train.py` (env registry, training, gates), `hil.py`, `onchip.py`, `viz.py`, `firmware/`.
 
 ## Board notes
 

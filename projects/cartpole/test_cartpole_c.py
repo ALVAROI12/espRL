@@ -6,15 +6,15 @@ from pathlib import Path
 
 import numpy as np
 
-from cartpole import CartPole
+from projects.cartpole.cartpole import CartPole
 
-RL = Path(__file__).resolve().parents[1]
+HERE = Path(__file__).resolve().parent
 F4 = ctypes.c_float * 4
 
 
 def build(tmp_path) -> ctypes.CDLL:
     lib = tmp_path / "libcartpole.so"
-    subprocess.run(["cc", "-std=c11", "-O2", "-Wall", "-Werror", "-shared", "-fPIC", str(RL / "cartpole.c"),
+    subprocess.run(["cc", "-std=c11", "-O2", "-Wall", "-Werror", "-shared", "-fPIC", str(HERE / "cartpole.c"),
                     "-o", str(lib), "-lm"], check=True)
     dll = ctypes.CDLL(str(lib))
     dll.cartpole_step.argtypes = [ctypes.POINTER(ctypes.c_float), ctypes.c_float]

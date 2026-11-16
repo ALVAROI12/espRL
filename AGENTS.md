@@ -6,9 +6,11 @@ USB (hardware-in-the-loop). Split out of the ESP-FC Next drone repo (`~/Projects
 ## Rules
 - ESP-IDF `release-v5.5` runs only in Docker via `tools/idf.sh` (Colima on macOS: `colima start`).
 - Firmware builds into `firmware/build-esp32s3/` with `-D SDKCONFIG=build-esp32s3/sdkconfig`; never commit `sdkconfig`.
-- On-chip code (`mlp.c`, `cartpole.c`, `firmware/`): no dynamic allocation; `mlp.c` and `cartpole.c` must build on host (tests) and target.
+- On-chip code (`mlp.c`, `projects/*/*.c`, `firmware/`): no dynamic allocation; all of it except `firmware/` must build on host (tests) and target.
 - Every policy change is gated on the board: `make hil` (lockstep chip vs torch action diff, return, lost replies).
 - Only `main.c` and `mlp.c` are built `-O2`: the whole image at `-O2` broke the USB-Serial/JTAG link (README).
+- One folder per project: `projects/<name>/` holds its env code, C physics port, tests, README (results) and
+  `media/` clips. Shared pipeline stays at the root. A new env starts as a new folder.
 - License: GPL-3.0.
 
 ## Commands

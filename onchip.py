@@ -8,7 +8,7 @@ Exit 1 unless every gate passes (2 if not ready to run):
 - every episode arrives whole (no dropped frame);
 - every step starts within 1 ms of 20 ms after the previous one.
 The chip computes in float32, so on swing-up its trajectory drifts from the Python (float64) run of the same seed:
-that run is reported, not compared. tests/test_cartpole_c.py checks the C physics step by step instead.
+that run is reported, not compared. projects/cartpole/test_cartpole_c.py checks the C physics step by step instead.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ import numpy as np
 from stable_baselines3 import SAC
 
 import train
-from cartpole import OUT_OF_TRACK, obs_of, reward
+from projects.cartpole.cartpole import OUT_OF_TRACK, obs_of, reward
 from export import reference_action
 from hil import CPU_MHZ, MAX_ACTION_DIFF, ready
 from link import Link

@@ -25,7 +25,7 @@ from stable_baselines3 import SAC
 
 import onchip
 import train
-from cartpole import HALF_LEN, OUT_OF_TRACK, X_MAX, obs_of, reward
+from projects.cartpole.cartpole import HALF_LEN, OUT_OF_TRACK, X_MAX, obs_of, reward
 from export import reference_action
 from hil import CPU_MHZ, ready
 from link import Link
