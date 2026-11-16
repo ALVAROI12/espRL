@@ -4,3 +4,4 @@ torch>=2.4
 numpy>=2.0
 pyserial>=3.5
 pytest>=8.0
+matplotlib>=3.9

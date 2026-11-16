@@ -12,6 +12,8 @@ colima start             # Docker for ESP-IDF
 make rl-fw               # rl/firmware/build-esp32s3
 make rl-flash [PORT=...] # default PORT = first /dev/cu.usbmodem*
 make rl-hil [PORT=...]   # 10 episodes on the board; report in rl/out/hil_report.json
+make rl-viz [PORT=...]   # live window: pendulum + chip/torch torque, inference us, USB round trip
+make rl-viz VIZ_ARGS="--save out/hil.gif"   # record one episode instead
 ```
 
 `rl-train` and `rl-fw` go together: the board must run the header from the same model `rl-hil` loads, or the
